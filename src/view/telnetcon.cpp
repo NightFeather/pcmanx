@@ -144,7 +144,6 @@ CTelnetCon::CTelnetCon(CTermView* pView, CSite& SiteInfo)
 	// Cache the sockaddr_in which can be used to reconnect.
 	memset(&m_SockAddr, 0, sizeof(m_SockAddr));
 	m_SockAddr.ss_family = AF_UNSPEC;
-	m_Port = "23";
 
 	gchar* locale_str;
 	gsize l;
@@ -260,7 +259,6 @@ bool CTelnetCon::Connect()
 	m_State = TS_CONNECTING;
 
 	string address;
-	m_Port = "23";
 	PreConnect( address, m_Port );
 
 	// If this site has auto-login settings, activate auto-login
@@ -277,35 +275,8 @@ bool CTelnetCon::Connect()
 #ifdef USE_EXTERNAL
 	// Run external program to handle connection.
 
-	/* external telnet */
-	if ( m_Port == "23" && m_Site.m_UseExternalTelnet )
-	{
-		// Suggestion from kyl <kylinx@gmail.com>
-		// Call forkpty() to use pseudo terminal and run an external program.
-		const char* prog = "telnet";
-		setenv("TERM", m_Site.m_TermType.c_str() , 1);
-		// Current terminal emulation is buggy and only suitable for BBS browsing.
-		// Both xterm or vt??? terminal emulation has not been fully implemented.
-		m_Pid = forkpty (& m_SockFD, NULL, NULL, NULL );
-		if ( m_Pid == 0 )
-		{
-			// Child Process;
-			close(m_SockFD);
-			execlp ( prog, prog, "-8", address.c_str(), NULL ) ;
-			exit(EXIT_FAILURE);
-		}
-		else
-		{
-			// Parent process
-			int flags = fcntl(m_SockFD, F_GETFD);
-			fcntl(m_SockFD, F_SETFD,
-				flags | FD_CLOEXEC); /* make m_SockFD
-							auto close on exec */
-		}
-		OnConnect(0);
-	}
 	/* external ssh */
-	else if ( m_Port == "22" && m_Site.m_UseExternalSSH )
+	if ( m_Site.m_UseExternalSSH )
 	{
 		// Suggestion from kyl <kylinx@gmail.com>
 		// Call forkpty() to use pseudo terminal and run
@@ -320,7 +291,48 @@ bool CTelnetCon::Connect()
 		{
 			// Child Process;
 			close(m_SockFD);
-			execlp ( prog, prog, address.c_str(), NULL ) ;
+
+			// Assume you're connecting to port 22 when no port specified.
+			// Also, when a port other than 22 is used, specify it in the command.
+			if( m_Port == "22" || m_Port.size() == 0 )
+				execlp ( prog, prog, address.c_str(), NULL );
+			else
+				execlp ( prog, prog, "-p", m_Port.c_str(), address.c_str(), NULL );
+
+			exit(EXIT_FAILURE);
+		}
+		else
+		{
+			// Parent process
+			int flags = fcntl(m_SockFD, F_GETFD);
+			fcntl(m_SockFD, F_SETFD,
+				flags | FD_CLOEXEC); /* make m_SockFD
+							auto close on exec */
+		}
+		OnConnect(0);
+	}
+	/* external telnet */
+	else if ( m_Site.m_UseExternalTelnet )
+	{
+		// Suggestion from kyl <kylinx@gmail.com>
+		// Call forkpty() to use pseudo terminal and run an external program.
+		const char* prog = "telnet";
+		setenv("TERM", m_Site.m_TermType.c_str() , 1);
+		// Current terminal emulation is buggy and only suitable for BBS browsing.
+		// Both xterm or vt??? terminal emulation has not been fully implemented.
+		m_Pid = forkpty (& m_SockFD, NULL, NULL, NULL );
+		if ( m_Pid == 0 )
+		{
+			// Child Process;
+			close(m_SockFD);
+
+			// Assume you're connecting to port 23 when no port specified.
+			// Also, when a port other than 22 is used, specify it in the command.
+			if( m_Port == "23" || m_Port.size() == 0 )
+				execlp ( prog, prog, "-8", address.c_str(), NULL );
+			else
+				execlp ( prog, prog, "-8", address.c_str(), m_Port.c_str(), NULL );
+
 			exit(EXIT_FAILURE);
 		}
 		else
@@ -336,6 +348,9 @@ bool CTelnetCon::Connect()
 	else	// Use built-in telnet command handler
 #endif
 	{
+		if( m_Port.size() == 0 )
+			m_Port = "23";
+
 		if( m_SockAddr.ss_family != AF_UNSPEC )
 			ConnectAsync();
 		else	// Lookup DNS first.
