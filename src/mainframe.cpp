@@ -304,13 +304,26 @@ CTelnetCon* CMainFrame::NewCon(string title, string url, CSite* site )
 	if (last >= first)
 		url = url.substr(first, last - first + 1);
 
+	if ( site == NULL )
+		site = &AppConfig.m_DefaultSite;
+
 	/* Remove telnet:// from url */
 	const string telnetPrefix = "telnet://";
 	if(url.substr(0, telnetPrefix.size()) == telnetPrefix)
 		url.erase(0, telnetPrefix.size());
 
-	if ( site == NULL )
-		site = &AppConfig.m_DefaultSite;
+#ifdef USE_EXTERNAL
+
+	/* Remove ssh:// from url */
+	/* And enable ssh         */
+	const string sshPrefix = "ssh://";
+	if(url.substr(0, sshPrefix.size()) == sshPrefix)
+	{
+		url.erase(0, sshPrefix.size());
+		site->m_UseExternalSSH = true;
+	}
+
+#endif
 
 	CTelnetCon* pCon;
 	CEditor* pEditor;
